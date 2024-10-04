@@ -2,12 +2,14 @@
 
 import os
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from amadeus import Client, ResponseError
 from dotenv import load_dotenv
 import logging
 import isodate
 from datetime import datetime
 from dateutil import parser
+import uuid
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -17,6 +19,8 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
+
+CORS(app)
 
 # Initialize the Amadeus client with your API credentials
 AMADEUS_API_KEY = os.getenv("AMADEUS_API_KEY")
@@ -65,12 +69,17 @@ def calculate_value_per_point(cash_price, points_required):
     return value_per_point
 
 
+import uuid  # Add this import at the top
+
+
 def process_flight_offers(flight_offers):
     results = []
     seen_offers = set()
 
     for offer in flight_offers:
-        offer_id = offer.get("id")
+        offer_id = offer.get("id") or str(
+            uuid.uuid4()
+        )  # Ensure each offer has a unique 'id'
         if not offer_id or offer_id in seen_offers:
             continue
         seen_offers.add(offer_id)
@@ -108,6 +117,7 @@ def process_flight_offers(flight_offers):
             value_per_point = calculate_value_per_point(price, points_required)
 
             result = {
+                "id": offer_id,  # Ensure 'id' is included
                 "price": price,
                 "airline": airline,
                 "points_required": int(points_required),
