@@ -22,4 +22,4 @@ dist/
 .vscode/
 
 # Environment variables file
-.env
+*.env
