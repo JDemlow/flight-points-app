@@ -1,5 +1,4 @@
-# app.py
-
+import uuid
 import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -9,7 +8,7 @@ import logging
 import isodate
 from datetime import datetime
 from dateutil import parser
-import uuid
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -174,4 +173,4 @@ def flight_offers_endpoint():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

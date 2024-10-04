@@ -1,25 +1,16 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
+*.pyo
+*.pyd
+*.pyc
 
-# Virtual environment
+# Virtual Environment
 venv/
 env/
+ENV/
+.venv/
+.env/
 
-# Distribution / packaging
-build/
-dist/
-*.egg-info/
-
-# Pytest cache
-.pytest_cache/
-
-# MyPy cache
-.mypy_cache/
-
-# VS Code settings
-.vscode/
-
-# Environment variables file
-*.env
+# Others
+*.log
