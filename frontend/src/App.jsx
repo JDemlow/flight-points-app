@@ -1,5 +1,3 @@
-// src/App.jsx
-
 import React, { useState } from "react";
 import FlightSearch from "./components/FlightSearch";
 import FlightResults from "./components/FlightResults";
@@ -9,6 +7,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
   const handleSearch = async ({ origin, destination, departureDate }) => {
     setLoading(true);
     setResults([]);
@@ -16,7 +16,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:5000/flight-offers?origin=${origin}&destination=${destination}&departure_date=${departureDate}`
+        `${API_BASE_URL}/flight-offers?origin=${origin}&destination=${destination}&departure_date=${departureDate}`
       );
 
       if (response.ok) {
