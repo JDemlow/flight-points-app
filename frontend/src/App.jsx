@@ -1,3 +1,5 @@
+// src/App.jsx
+
 import React, { useState } from "react";
 import FlightSearch from "./components/FlightSearch";
 import FlightResults from "./components/FlightResults";
@@ -7,6 +9,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Access the environment variable
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   const handleSearch = async ({ origin, destination, departureDate }) => {
