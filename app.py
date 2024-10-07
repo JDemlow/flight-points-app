@@ -17,6 +17,7 @@ from dateutil import parser
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -52,7 +53,7 @@ AMADEUS_API_KEY = os.getenv("AMADEUS_API_KEY")
 AMADEUS_API_SECRET = os.getenv("AMADEUS_API_SECRET")
 
 if not AMADEUS_API_KEY or not AMADEUS_API_SECRET:
-    logging.error("Amadeus API credentials are not set in the environment variables.")
+    logger.error("Amadeus API credentials are not set in the environment variables.")
     raise EnvironmentError("Missing Amadeus API credentials.")
 
 amadeus = Client(client_id=AMADEUS_API_KEY, client_secret=AMADEUS_API_SECRET)
@@ -72,9 +73,12 @@ def get_flight_offers(origin, destination, departure_date):
             adults=1,
             max=10,
         )
+        logger.info(
+            f"Fetched flight offers for {origin} to {destination} on {departure_date}"
+        )
         return response.data
     except ResponseError as error:
-        logging.error(f"Amadeus API ResponseError: {error}")
+        logger.error(f"Amadeus API ResponseError: {error}")
         return []
 
 
@@ -166,7 +170,7 @@ def process_flight_offers(flight_offers):
             }
             results.append(result)
         except Exception as e:
-            logging.error(f"Error processing offer ID {offer_id}: {e}")
+            logger.error(f"Error processing offer ID {offer_id}: {e}")
             continue
 
     # Sort results by value_per_point in descending order
@@ -177,8 +181,11 @@ def process_flight_offers(flight_offers):
 # ================================
 # 3. API Endpoints
 # ================================
+
+
 @app.route("/health", methods=["GET"])
 def health_check():
+    """Health check endpoint to verify the server is running."""
     return jsonify({"status": "healthy"}), 200
 
 
@@ -207,11 +214,13 @@ def flight_offers_endpoint():
         )
 
     if errors:
+        logger.warning(f"Validation errors: {errors}")
         return jsonify({"errors": errors}), 400
 
     # Get flight offers from Amadeus API
     offers = get_flight_offers(origin, destination, departure_date)
     if not offers:
+        logger.info("No flight offers found.")
         return jsonify({"message": "No flight offers found."}), 404
 
     # Process and structure flight offers
@@ -231,6 +240,7 @@ def airport_search_endpoint():
 
     # Validate input
     if not keyword:
+        logger.warning("Missing search keyword.")
         return jsonify({"errors": ["Missing search keyword."]}), 400
 
     try:
@@ -262,19 +272,21 @@ def airport_search_endpoint():
                 break
 
         if not formatted_locations:
+            logger.info("No matching airports or cities found.")
             return jsonify({"message": "No matching airports or cities found."}), 404
 
+        logger.info(f"Found {len(formatted_locations)} locations matching '{keyword}'")
         return jsonify({"locations": formatted_locations}), 200
 
     except ResponseError as error:
-        logging.error(f"Amadeus API ResponseError: {error}")
+        logger.error(f"Amadeus API ResponseError: {error}")
         return (
             jsonify({"errors": ["Amadeus API error: Unable to process your request."]}),
             500,
         )
 
     except Exception as e:
-        logging.error(f"Unexpected error in /airport-search: {e}")
+        logger.error(f"Unexpected error in /airport-search: {e}")
         return jsonify({"errors": ["An unexpected error occurred."]}), 500
 
 
@@ -284,4 +296,6 @@ def airport_search_endpoint():
 
 if __name__ == "__main__":
     # It's recommended to run Flask with a production server like Gunicorn in deployment
-    app.run(debug=False, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    port = int(os.environ.get("PORT", 5000))
+    logger.info(f"Starting Flask app on port {port}")
+    app.run(debug=False, host="0.0.0.0", port=port)
