@@ -186,6 +186,7 @@ def process_flight_offers(flight_offers):
 @app.route("/health", methods=["GET"])
 def health_check():
     """Health check endpoint to verify the server is running."""
+    logger.info("Health check requested.")
     return jsonify({"status": "healthy"}), 200
 
 
@@ -225,6 +226,7 @@ def flight_offers_endpoint():
 
     # Process and structure flight offers
     results = process_flight_offers(offers)
+    logger.info(f"Returning {len(results)} flight offers.")
     return jsonify(results), 200
 
 
