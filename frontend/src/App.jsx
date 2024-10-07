@@ -27,7 +27,13 @@ function App() {
         setResults(data);
       } else {
         const errorData = await response.json();
-        setError(errorData.message || errorData.errors.join(", "));
+        if (errorData.errors && errorData.errors.length > 0) {
+          setError(errorData.errors.join(", "));
+        } else if (errorData.message) {
+          setError(errorData.message);
+        } else {
+          setError("An unexpected error occurred.");
+        }
       }
     } catch (error) {
       console.error("Error fetching flight offers:", error);
@@ -45,7 +51,10 @@ function App() {
       <FlightSearch onSearch={handleSearch} />
       {loading ? (
         <div className="flex justify-center mt-4">
-          <div className="w-12 h-12 border-t-4 border-b-4 border-blue-500 rounded-full animate-spin" />
+          <div
+            className="w-12 h-12 border-t-4 border-b-4 border-blue-500 rounded-full animate-spin"
+            aria-label="Loading spinner"
+          />
         </div>
       ) : (
         <>

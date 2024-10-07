@@ -1,45 +1,80 @@
-import uuid
 import os
+import uuid
+import logging
+from datetime import datetime
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_caching import Cache
 from amadeus import Client, ResponseError
 from dotenv import load_dotenv
-import logging
 import isodate
-from datetime import datetime
 from dateutil import parser
 
+# ================================
+# 1. Configuration and Initialization
+# ================================
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
-# Load environment variables
+# Load environment variables from .env file
 load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
 
-CORS(app)
+# Configure CORS
+# Replace 'https://your-netlify-site.netlify.app' with your actual Netlify frontend URL
+CORS(
+    app,
+    resources={
+        r"/flight-offers": {
+            "origins": [
+                "http://localhost:5173",
+                "https://flight-points-app.netlify.app",
+            ]
+        },
+        r"/airport-search": {
+            "origins": [
+                "http://localhost:5173",
+                "https://flight-points-app.netlify.app",
+            ]
+        },
+    },
+)
+
+# Initialize Flask-Caching
+cache = Cache(app, config={"CACHE_TYPE": "simple"})
 
 # Initialize the Amadeus client with your API credentials
 AMADEUS_API_KEY = os.getenv("AMADEUS_API_KEY")
 AMADEUS_API_SECRET = os.getenv("AMADEUS_API_SECRET")
+
+if not AMADEUS_API_KEY or not AMADEUS_API_SECRET:
+    logging.error("Amadeus API credentials are not set in the environment variables.")
+    raise EnvironmentError("Missing Amadeus API credentials.")
+
 amadeus = Client(client_id=AMADEUS_API_KEY, client_secret=AMADEUS_API_SECRET)
+
+# ================================
+# 2. Helper Functions
+# ================================
 
 
 def get_flight_offers(origin, destination, departure_date):
     """Retrieve flight offers based on origin, destination, and departure date."""
     try:
         response = amadeus.shopping.flight_offers_search.get(
-            originLocationCode=origin,
-            destinationLocationCode=destination,
+            originLocationCode=origin.upper(),
+            destinationLocationCode=destination.upper(),
             departureDate=departure_date,
             adults=1,
             max=10,
         )
         return response.data
     except ResponseError as error:
-        logging.error(f"An error occurred: {error}")
+        logging.error(f"Amadeus API ResponseError: {error}")
         return []
 
 
@@ -68,10 +103,8 @@ def calculate_value_per_point(cash_price, points_required):
     return value_per_point
 
 
-import uuid  # Add this import at the top
-
-
 def process_flight_offers(flight_offers):
+    """Process raw flight offers data into a structured format."""
     results = []
     seen_offers = set()
 
@@ -86,6 +119,7 @@ def process_flight_offers(flight_offers):
         try:
             price = float(offer["price"]["total"])
             airline = offer["validatingAirlineCodes"][0]
+
             # Extract additional flight details
             departure_time = offer["itineraries"][0]["segments"][0]["departure"]["at"]
             arrival_time = offer["itineraries"][0]["segments"][-1]["arrival"]["at"]
@@ -111,12 +145,13 @@ def process_flight_offers(flight_offers):
             # Check if flight arrives on a different day
             overnight = arrival_datetime.date() > departure_datetime.date()
 
-            # Pass both price and airline to the function
+            # Calculate points required and value per point
             points_required, point_value = estimate_points_required(price, airline)
             value_per_point = calculate_value_per_point(price, points_required)
 
+            # Compile the result
             result = {
-                "id": offer_id,  # Ensure 'id' is included
+                "id": offer_id,
                 "price": price,
                 "airline": airline,
                 "points_required": int(points_required),
@@ -134,13 +169,22 @@ def process_flight_offers(flight_offers):
             logging.error(f"Error processing offer ID {offer_id}: {e}")
             continue
 
-    # Sort results
+    # Sort results by value_per_point in descending order
     sorted_results = sorted(results, key=lambda x: x["value_per_point"], reverse=True)
     return sorted_results
 
 
+# ================================
+# 3. API Endpoints
+# ================================
+
+
 @app.route("/flight-offers", methods=["GET"])
 def flight_offers_endpoint():
+    """
+    Endpoint to retrieve flight offers.
+    Example: /flight-offers?origin=JFK&destination=LAX&departure_date=2024-12-05
+    """
     # Get query parameters
     origin = request.args.get("origin")
     destination = request.args.get("destination")
@@ -162,15 +206,79 @@ def flight_offers_endpoint():
     if errors:
         return jsonify({"errors": errors}), 400
 
-    # Get flight offers
+    # Get flight offers from Amadeus API
     offers = get_flight_offers(origin, destination, departure_date)
     if not offers:
         return jsonify({"message": "No flight offers found."}), 404
 
-    # Process flight offers
+    # Process and structure flight offers
     results = process_flight_offers(offers)
-    return jsonify(results)
+    return jsonify(results), 200
 
+
+@app.route("/airport-search", methods=["GET"], strict_slashes=False)
+@cache.cached(timeout=300, query_string=True)  # Cache for 5 minutes
+def airport_search_endpoint():
+    """
+    Endpoint to search for airports and cities based on a keyword.
+    Example: /airport-search?keyword=New%20York&subType=AIRPORT
+    """
+    keyword = request.args.get("keyword")
+    sub_type = request.args.get("subType")  # Optional: 'AIRPORT' or 'CITY'
+
+    # Validate input
+    if not keyword:
+        return jsonify({"errors": ["Missing search keyword."]}), 400
+
+    try:
+        # Call Amadeus API to search locations
+        response = amadeus.reference_data.locations.get(
+            keyword=keyword,
+            subType=sub_type,  # Can be 'AIRPORT', 'CITY', or omitted for both
+        )
+        locations = response.data
+
+        MAX_RESULTS = 10  # Define a maximum number of results
+
+        # Process and format the response
+        formatted_locations = []
+        for location in locations:
+            if "iataCode" in location and location["iataCode"]:
+                formatted_locations.append(
+                    {
+                        "name": location.get("name"),
+                        "iata_code": location.get("iataCode"),
+                        "city": location.get("address", {}).get("cityName"),
+                        "country": location.get("address", {}).get("countryName"),
+                        "latitude": location.get("geoCode", {}).get("latitude"),
+                        "longitude": location.get("geoCode", {}).get("longitude"),
+                        "type": location.get("subType"),  # 'AIRPORT' or 'CITY'
+                    }
+                )
+            if len(formatted_locations) >= MAX_RESULTS:
+                break
+
+        if not formatted_locations:
+            return jsonify({"message": "No matching airports or cities found."}), 404
+
+        return jsonify({"locations": formatted_locations}), 200
+
+    except ResponseError as error:
+        logging.error(f"Amadeus API ResponseError: {error}")
+        return (
+            jsonify({"errors": ["Amadeus API error: Unable to process your request."]}),
+            500,
+        )
+
+    except Exception as e:
+        logging.error(f"Unexpected error in /airport-search: {e}")
+        return jsonify({"errors": ["An unexpected error occurred."]}), 500
+
+
+# ================================
+# 4. Application Entry Point
+# ================================
 
 if __name__ == "__main__":
+    # It's recommended to run Flask with a production server like Gunicorn in deployment
     app.run(debug=False, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
