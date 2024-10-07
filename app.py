@@ -25,7 +25,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # Configure CORS
-# Replace 'https://your-netlify-site.netlify.app' with your actual Netlify frontend URL
+# Replace 'https://flight-points-app.netlify.app' with your actual Netlify frontend URL
 CORS(
     app,
     resources={
@@ -177,6 +177,9 @@ def process_flight_offers(flight_offers):
 # ================================
 # 3. API Endpoints
 # ================================
+@app.route("/health", methods=["GET"])
+def health_check():
+    return jsonify({"status": "healthy"}), 200
 
 
 @app.route("/flight-offers", methods=["GET"])
