@@ -81,28 +81,18 @@ AIRLINE_CODES = {
 # ================================
 
 
-def get_flight_offers(origin, destination, departure_date, return_date=None):
-    """Retrieve flight offers based on origin, destination, departure date, and optional return date."""
+def get_flight_offers(origin, destination, departure_date):
+    """Retrieve flight offers based on origin, destination, and departure date."""
     try:
-        # Build query parameters
-        params = {
-            "originLocationCode": origin.upper(),
-            "destinationLocationCode": destination.upper(),
-            "departureDate": departure_date,
-            "adults": 1,
-            "max": 10,
-            "nonStop": False,  # Include all flights
-            "currencyCode": "USD",  # Adjust as needed
-        }
-
-        if return_date:
-            params["returnDate"] = return_date
-            params["travelClass"] = "ECONOMY"  # Adjust as needed
-
-        response = amadeus.shopping.flight_offers_search.get(**params)
+        response = amadeus.shopping.flight_offers_search.get(
+            originLocationCode=origin.upper(),
+            destinationLocationCode=destination.upper(),
+            departureDate=departure_date,
+            adults=1,
+            max=10,
+        )
         logger.info(
             f"Fetched flight offers for {origin} to {destination} on {departure_date}"
-            + (f" and return on {return_date}" if return_date else "")
         )
         return response.data
     except ResponseError as error:
@@ -161,120 +151,50 @@ def process_flight_offers(flight_offers):
                 airline_code, "Unknown Airline"
             )  # Use static mapping
 
-            # Extract outbound flight details
-            outbound = offer["itineraries"][0]
-            outbound_departure_time = outbound["segments"][0]["departure"]["at"]
-            outbound_arrival_time = outbound["segments"][-1]["arrival"]["at"]
-            outbound_duration = outbound["duration"]
-            outbound_stops = len(outbound["segments"]) - 1
+            # Extract additional flight details
+            departure_time = offer["itineraries"][0]["segments"][0]["departure"]["at"]
+            arrival_time = offer["itineraries"][0]["segments"][-1]["arrival"]["at"]
+            duration = offer["itineraries"][0]["duration"]
+            stops = len(offer["itineraries"][0]["segments"]) - 1
 
-            # Parse outbound duration for readability
-            parsed_outbound_duration = isodate.parse_duration(outbound_duration)
-            outbound_hours, remainder = divmod(
-                parsed_outbound_duration.total_seconds(), 3600
-            )
-            outbound_minutes, _ = divmod(remainder, 60)
-            outbound_duration_formatted = (
-                f"{int(outbound_hours)}h {int(outbound_minutes)}m"
-            )
+            # Parse duration for readability
+            parsed_duration = isodate.parse_duration(duration)
+            hours, remainder = divmod(parsed_duration.total_seconds(), 3600)
+            minutes, _ = divmod(remainder, 60)
+            duration_formatted = f"{int(hours)}h {int(minutes)}m"
 
-            # Parse outbound departure and arrival times
-            outbound_departure_datetime = parser.isoparse(outbound_departure_time)
-            outbound_arrival_datetime = parser.isoparse(outbound_arrival_time)
+            # Parse departure and arrival times
+            departure_datetime = parser.isoparse(departure_time)
+            arrival_datetime = parser.isoparse(arrival_time)
 
-            # Calculate outbound total travel time
-            outbound_total_travel_time = (
-                outbound_arrival_datetime - outbound_departure_datetime
-            )
-            outbound_total_hours, remainder = divmod(
-                outbound_total_travel_time.total_seconds(), 3600
-            )
-            outbound_total_minutes, _ = divmod(remainder, 60)
-            outbound_total_travel_time_formatted = (
-                f"{int(outbound_total_hours)}h {int(outbound_total_minutes)}m"
-            )
+            # Calculate total travel time
+            total_travel_time = arrival_datetime - departure_datetime
+            total_hours, remainder = divmod(total_travel_time.total_seconds(), 3600)
+            total_minutes, _ = divmod(remainder, 60)
+            total_travel_time_formatted = f"{int(total_hours)}h {int(total_minutes)}m"
 
-            # Check if outbound flight arrives on a different day
-            outbound_overnight = (
-                outbound_arrival_datetime.date() > outbound_departure_datetime.date()
-            )
+            # Check if flight arrives on a different day
+            overnight = arrival_datetime.date() > departure_datetime.date()
 
-            # Initialize result object
+            # Calculate points required and value per point
+            points_required, point_value = estimate_points_required(price, airline_code)
+            value_per_point = calculate_value_per_point(price, points_required)
+
+            # Compile the result
             result = {
                 "id": offer_id,
                 "price": price,
                 "airline": airline_name,  # Updated to display airline name
-                "points_required": int(
-                    estimate_points_required(price, airline_code)[0]
-                ),
-                "value_per_point": round(
-                    calculate_value_per_point(
-                        price, estimate_points_required(price, airline_code)[0]
-                    ),
-                    2,
-                ),
-                "point_value": estimate_points_required(price, airline_code)[1],
-                "departure_time": outbound_departure_datetime.strftime(
-                    "%Y-%m-%d %H:%M"
-                ),
-                "arrival_time": outbound_arrival_datetime.strftime("%Y-%m-%d %H:%M"),
-                "duration": outbound_duration_formatted,
-                "stops": outbound_stops,
-                "total_travel_time": outbound_total_travel_time_formatted,
-                "overnight": outbound_overnight,
+                "points_required": int(points_required),
+                "value_per_point": round(value_per_point, 2),
+                "point_value": point_value,
+                "departure_time": departure_datetime.strftime("%Y-%m-%d %H:%M"),
+                "arrival_time": arrival_datetime.strftime("%Y-%m-%d %H:%M"),
+                "duration": duration_formatted,
+                "stops": stops,
+                "total_travel_time": total_travel_time_formatted,
+                "overnight": overnight,
             }
-
-            # If return flight exists, extract and add its details
-            if len(offer["itineraries"]) > 1:
-                return_flight = offer["itineraries"][1]
-                return_departure_time = return_flight["segments"][0]["departure"]["at"]
-                return_arrival_time = return_flight["segments"][-1]["arrival"]["at"]
-                return_duration = return_flight["duration"]
-                return_stops = len(return_flight["segments"]) - 1
-
-                # Parse return duration for readability
-                parsed_return_duration = isodate.parse_duration(return_duration)
-                return_hours, remainder = divmod(
-                    parsed_return_duration.total_seconds(), 3600
-                )
-                return_minutes, _ = divmod(remainder, 60)
-                return_duration_formatted = (
-                    f"{int(return_hours)}h {int(return_minutes)}m"
-                )
-
-                # Parse return departure and arrival times
-                return_departure_datetime = parser.isoparse(return_departure_time)
-                return_arrival_datetime = parser.isoparse(return_arrival_time)
-
-                # Calculate return total travel time
-                return_total_travel_time = (
-                    return_arrival_datetime - return_departure_datetime
-                )
-                return_total_hours, remainder = divmod(
-                    return_total_travel_time.total_seconds(), 3600
-                )
-                return_total_minutes, _ = divmod(remainder, 60)
-                return_total_travel_time_formatted = (
-                    f"{int(return_total_hours)}h {int(return_total_minutes)}m"
-                )
-
-                # Check if return flight arrives on a different day
-                return_overnight = (
-                    return_arrival_datetime.date() > return_departure_datetime.date()
-                )
-
-                # Add return flight details to the result
-                result["return_flight"] = {
-                    "departure_time": return_departure_datetime.strftime(
-                        "%Y-%m-%d %H:%M"
-                    ),
-                    "arrival_time": return_arrival_datetime.strftime("%Y-%m-%d %H:%M"),
-                    "duration": return_duration_formatted,
-                    "stops": return_stops,
-                    "total_travel_time": return_total_travel_time_formatted,
-                    "overnight": return_overnight,
-                }
-
             results.append(result)
         except Exception as e:
             logger.error(f"Error processing offer ID {offer_id}: {e}")
@@ -301,17 +221,12 @@ def health_check():
 def flight_offers_endpoint():
     """
     Endpoint to retrieve flight offers.
-    Supports both one-way and round-trip searches.
-    Example (One-Way):
-        /flight-offers?origin=JFK&destination=LAX&departure_date=2024-12-05
-    Example (Round-Trip):
-        /flight-offers?origin=JFK&destination=LAX&departure_date=2024-12-05&return_date=2024-12-15
+    Example: /flight-offers?origin=JFK&destination=LAX&departure_date=2024-12-05
     """
     # Get query parameters
     origin = request.args.get("origin")
     destination = request.args.get("destination")
     departure_date = request.args.get("departure_date")
-    return_date = request.args.get("return_date")  # Optional for round-trip
 
     # Validate inputs
     errors = []
@@ -326,21 +241,12 @@ def flight_offers_endpoint():
             "Invalid or missing departure date. Please use YYYY-MM-DD format."
         )
 
-    if return_date:
-        try:
-            datetime.strptime(return_date, "%Y-%m-%d")
-            # Ensure return_date is after departure_date
-            if return_date < departure_date:
-                errors.append("Return date cannot be before departure date.")
-        except (ValueError, TypeError):
-            errors.append("Invalid return date. Please use YYYY-MM-DD format.")
-
     if errors:
         logger.warning(f"Validation errors: {errors}")
         return jsonify({"errors": errors}), 400
 
     # Get flight offers from Amadeus API
-    offers = get_flight_offers(origin, destination, departure_date, return_date)
+    offers = get_flight_offers(origin, destination, departure_date)
     if not offers:
         logger.info("No flight offers found.")
         return jsonify({"message": "No flight offers found."}), 404
