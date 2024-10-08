@@ -1,3 +1,5 @@
+// src/App.jsx
+
 import React, { useState } from "react";
 import FlightSearch from "./components/FlightSearch";
 import FlightResults from "./components/FlightResults";
@@ -10,14 +12,30 @@ function App() {
   // Access the environment variable
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
-  const handleSearch = async ({ origin, destination, departureDate }) => {
+  const handleSearch = async ({
+    origin,
+    destination,
+    departureDate,
+    returnDate,
+  }) => {
     setLoading(true);
     setResults([]);
     setError(null);
 
     try {
+      // Construct query parameters
+      const params = new URLSearchParams({
+        origin,
+        destination,
+        departure_date: departureDate,
+      });
+
+      if (returnDate) {
+        params.append("return_date", returnDate);
+      }
+
       const response = await fetch(
-        `${API_BASE_URL}/flight-offers?origin=${origin}&destination=${destination}&departure_date=${departureDate}`
+        `${API_BASE_URL}/flight-offers?${params.toString()}`
       );
 
       if (response.ok) {

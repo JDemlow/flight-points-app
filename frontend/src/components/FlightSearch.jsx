@@ -9,6 +9,7 @@ const FlightSearch = ({ onSearch }) => {
   const [origin, setOrigin] = useState(null);
   const [destination, setDestination] = useState(null);
   const [departureDate, setDepartureDate] = useState("");
+  const [returnDate, setReturnDate] = useState(""); // New state for return date
 
   const [originOptions, setOriginOptions] = useState([]);
   const [destinationOptions, setDestinationOptions] = useState([]);
@@ -103,13 +104,15 @@ const FlightSearch = ({ onSearch }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (origin && destination && departureDate) {
+      // If returnDate is provided, include it in the search
       onSearch({
         origin: origin.value,
         destination: destination.value,
         departureDate,
+        returnDate: returnDate || null, // Pass null if not provided
       });
     } else {
-      alert("Please fill in all fields.");
+      alert("Please fill in all required fields.");
     }
   };
 
@@ -166,6 +169,20 @@ const FlightSearch = ({ onSearch }) => {
           className="w-full px-3 py-2 leading-tight text-gray-700 border rounded shadow appearance-none focus:outline-none focus:shadow-outline"
           required
           min={new Date().toISOString().split("T")[0]} // Prevent selecting past dates
+        />
+      </div>
+
+      {/* Return Date Selection */}
+      <div className="mb-4">
+        <label className="block mb-2 text-sm font-bold text-gray-700">
+          Return Date (Optional)
+        </label>
+        <input
+          type="date"
+          value={returnDate}
+          onChange={(e) => setReturnDate(e.target.value)}
+          className="w-full px-3 py-2 leading-tight text-gray-700 border rounded shadow appearance-none focus:outline-none focus:shadow-outline"
+          min={departureDate || new Date().toISOString().split("T")[0]} // Ensure return date is after departure
         />
       </div>
 
