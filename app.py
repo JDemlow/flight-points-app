@@ -45,7 +45,7 @@ CORS(
     },
 )
 
-# Initialize Flask-Caching
+# Initialize Flask-Caching with simple cache (in-memory)
 cache = Cache(app, config={"CACHE_TYPE": "simple"})
 
 # Initialize the Amadeus client with your API credentials
@@ -59,7 +59,25 @@ if not AMADEUS_API_KEY or not AMADEUS_API_SECRET:
 amadeus = Client(client_id=AMADEUS_API_KEY, client_secret=AMADEUS_API_SECRET)
 
 # ================================
-# 2. Helper Functions
+# 2. Static Airline Codes Mapping
+# ================================
+
+AIRLINE_CODES = {
+    "F9": "Frontier Airlines",
+    "B6": "JetBlue Airways",
+    "AS": "Alaska Airlines",
+    "SY": "Sun Country Airlines",
+    "NK": "Spirit Airlines",
+    "UA": "United Airlines",
+    "DL": "Delta Air Lines",
+    "AA": "American Airlines",
+    "SW": "Southwest Airlines",
+    "HA": "Hawaiian Airlines",
+    # Add more airlines as needed
+}
+
+# ================================
+# 3. Helper Functions
 # ================================
 
 
@@ -90,6 +108,12 @@ def estimate_points_required(cash_price, airline_code):
         "B6": 0.013,  # JetBlue Airways
         "AS": 0.012,  # Alaska Airlines
         "SY": 0.010,  # Sun Country Airlines
+        "NK": 0.014,  # Spirit Airlines
+        "UA": 0.012,  # United Airlines
+        "DL": 0.013,  # Delta Air Lines
+        "AA": 0.015,  # American Airlines
+        "SW": 0.011,  # Southwest Airlines
+        "HA": 0.014,  # Hawaiian Airlines
         # Add more airlines as needed
     }
     average_point_value = airline_point_values.get(
@@ -122,7 +146,10 @@ def process_flight_offers(flight_offers):
 
         try:
             price = float(offer["price"]["total"])
-            airline = offer["validatingAirlineCodes"][0]
+            airline_code = offer["validatingAirlineCodes"][0]
+            airline_name = AIRLINE_CODES.get(
+                airline_code, "Unknown Airline"
+            )  # Use static mapping
 
             # Extract additional flight details
             departure_time = offer["itineraries"][0]["segments"][0]["departure"]["at"]
@@ -150,14 +177,14 @@ def process_flight_offers(flight_offers):
             overnight = arrival_datetime.date() > departure_datetime.date()
 
             # Calculate points required and value per point
-            points_required, point_value = estimate_points_required(price, airline)
+            points_required, point_value = estimate_points_required(price, airline_code)
             value_per_point = calculate_value_per_point(price, points_required)
 
             # Compile the result
             result = {
                 "id": offer_id,
                 "price": price,
-                "airline": airline,
+                "airline": airline_name,  # Updated to display airline name
                 "points_required": int(points_required),
                 "value_per_point": round(value_per_point, 2),
                 "point_value": point_value,
@@ -179,7 +206,7 @@ def process_flight_offers(flight_offers):
 
 
 # ================================
-# 3. API Endpoints
+# 4. API Endpoints
 # ================================
 
 
@@ -293,7 +320,7 @@ def airport_search_endpoint():
 
 
 # ================================
-# 4. Application Entry Point
+# 5. Application Entry Point
 # ================================
 
 if __name__ == "__main__":
